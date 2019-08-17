@@ -1,5 +1,8 @@
 use {
-    specs::{Component, Read, Join, ReadStorage, System, VecStorage, WriteStorage},
+    specs::{
+        Builder, Component, DispatcherBuilder, Join, Read, ReadStorage, System,
+        VecStorage, World, WriteStorage, Entities
+    },
     specs_derive::Component,
 };
 
@@ -29,11 +32,21 @@ struct Name {
 struct HelloWorld;
 
 impl<'a> System<'a> for HelloWorld {
-    type SystemData = (ReadStorage<'a, Position>, ReadStorage<'a, Name>);
+    type SystemData = (
+        Entities<'a>,
+        ReadStorage<'a, Name>, 
+        ReadStorage<'a, Position>
+    );
 
-    fn run(&mut self, (position, name): Self::SystemData) {
-        for (position, name) in (&position, &name).join() {
-            println!("Hello, {}! {:?}", &name.name, &position);
+    fn run(&mut self, (entities, name_storage, pos): Self::SystemData) {        
+        for (ent, pos) in (&*entities, &pos).join() {
+            
+            //name is optional
+            if let Some(name) = name_storage.get(ent) {
+                print!("Hello {}! ", &name.name);
+            }
+
+            println!("{:?}", &pos);
         }
     }
 }
@@ -60,22 +73,24 @@ impl<'a> System<'a> for UpdatePos {
 }
 
 fn main() {
-    use specs::{Builder, DispatcherBuilder, World};
-
     //create world
     let mut world = World::new();
+    let mut dispatcher = DispatcherBuilder::new()
+        .with(HelloWorld, "hello_world", &[])
+        .with(UpdatePos, "update_pos", &["hello_world"])
+        .with(HelloWorld, "hello_updated", &["update_pos"])
+        .build();
 
-    //register components
-    world.register::<Position>();
-    world.register::<Velocity>();
-    world.register::<Name>();
+    dispatcher.setup(&mut world.res);
+
+    world.add_resource(DeltaTime(0.05));
 
     //create entities with components
     world
         .create_entity()
-        .with(Name {
-            name: "entity 1".to_string(),
-        })
+        // .with(Name {
+        //     name: "entity 1".to_string(),
+        // })
         .with(Position { x: 4.0, y: 7.0 })
         .build();
 
@@ -86,14 +101,6 @@ fn main() {
         })
         .with(Position { x: 2.0, y: 5.0 })
         .with(Velocity { x: 0.1, y: 0.2 })
-        .build();
-
-    world.add_resource(DeltaTime(0.5));
-
-    let mut dispatcher = DispatcherBuilder::new()
-        .with(HelloWorld, "hello_world", &[])
-        .with(UpdatePos, "update_pos", &["hello_world"])
-        .with(HelloWorld, "hello_updated", &["update_pos"])
         .build();
 
     dispatcher.dispatch(&mut world.res);
